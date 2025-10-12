@@ -1,0 +1,25 @@
+# @package _global_
+defaults:
+  - _self_
+  - hydra: default
+  - alignment_module: plasma
+  - launcher: null
+
+# Training configuration
+job_name: train
+task: motif
+backbone_model: ProstT5  # prot_bert,ankh-base,TM-Vec,ProstT5,prot_t5_xl_half_uniref50-enc,esm2_t33_650M_UR50D,ProtSSN
+split: 0
+learning_rate: 1e-4
+num_epochs: 20
+batch_size: 1
+patience: 3
+min_delta: 1e-4
+device: auto
+seed: 42
+target_loss_weight: 1.0
+supervise_metric: loss  # rocauc, prauc, f1max, loss, label_match_score
+enable_cleanup: false
+test: true
+dataset_fraction: 1
+

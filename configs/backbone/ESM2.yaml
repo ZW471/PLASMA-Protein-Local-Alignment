@@ -1,0 +1,22 @@
+# Configuration for ESM2 model
+
+defaults:
+  - plm
+
+# Specific target for ESM2 model
+target: backbones.plms.model.PLModels
+
+# Model-specific parameters
+model_name: "facebook/esm2_t33_650M_UR50D"
+model_type: "esm"
+model_key: "esm2_t33_650M_UR50D"
+
+# Cache directory for this specific model
+cache_dir: "weights/esm2_t33_650M_UR50D"
+
+# Output configuration
+embedding_types:
+  - "esm2_t33_650M_UR50D"
+
+# ESM2-specific parameters
+max_length: 1024

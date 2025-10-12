@@ -1,0 +1,51 @@
+# @package launcher
+
+# Qsub launcher configuration for HPC job submission
+  # PBS/Qsub specific settings
+  queue: ai4090
+  walltime: "2:00:00"
+  resources:
+    select: 1
+    ncpus: 10
+    ngpus: 1
+    mem: "36gb"
+  
+  # Job naming and output
+  job_name_template: "{task}_{backbone_model}"
+  output_dir: "./qsub_logs"
+  error_dir: "./qsub_logs"
+  
+  # Additional PBS options
+  additional_options: []
+  
+  # Conda environment settings
+  conda_env: plasma  # Set to null to disable conda activation
+  conda_init_script: null  # Custom conda initialization script path (optional)
+  
+  # Whether to submit immediately or just generate scripts
+  submit_immediately: true
+  
+  # Debug mode: print script content without submitting or saving
+  debug: false
+  
+  # Script generation settings
+  script_dir: "./qsub_scripts"
+  script_template: |
+    #!/bin/bash
+    #PBS -q {queue}
+    #PBS -l walltime={walltime}
+    #PBS -l select={select}:ncpus={ncpus}:ngpus={ngpus}:mem={mem}
+    #PBS -N {job_name}
+    #PBS -o {output_path}
+    #PBS -e {error_path}
+    {additional_pbs_options}
+    
+    # Change to working directory
+    cd {work_dir}
+    
+    # Activate conda environment if specified
+    {conda_setup}
+    
+    # Run the command
+    {command}
+

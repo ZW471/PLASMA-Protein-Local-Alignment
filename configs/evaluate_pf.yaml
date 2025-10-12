@@ -1,0 +1,15 @@
+# @package _global_
+defaults:
+  - _self_
+  - hydra: default
+  - alignment_module: plasma_pf
+  - launcher: null
+
+# Protein Function evaluation configuration using no-learning alignment
+job_name: evaluate_pf
+task: motif
+backbone_model: ProstT5  # prot_bert,ankh-base,TM-Vec,ProstT5,prot_t5_xl_half_uniref50-enc,esm2_t33_650M_UR50D,ProtSSN
+split: 0
+batch_size: 1
+device: null
+seed: 42

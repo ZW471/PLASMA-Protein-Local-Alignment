@@ -1,0 +1,30 @@
+# @package _global_
+defaults:
+  - _self_
+  - hydra: default
+
+# PDB download configuration
+job_name: download_pdb
+task: any
+output_dir: null  # Directory to save downloaded PDB files
+
+# Base URL for PDB downloads
+base_url: https://huggingface.co/datasets/AI4Protein
+
+# PDB download URLs for different tasks
+download_urls:
+  motif: ${base_url}/VenusX_Motif_AlphaFold2_PDB/resolve/main/VenusX_Motif_AlphaFold2_PDB.zip?download=true
+  binding_site: ${base_url}/VenusX_BindI_AlphaFold2_PDB/resolve/main/VenusX_BindI_AlphaFold2_PDB.zip?download=true
+  active_site: ${base_url}/VenusX_Act_AlphaFold2_PDB/resolve/main/VenusX_Act_AlphaFold2_PDB.zip?download=true
+  domain: ${base_url}/VenusX_Dom_AlphaFold2_PDB/resolve/main/VenusX_Dom_AlphaFold2_PDB.zip?download=true
+  evo: ${base_url}/VenusX_Evo_AlphaFold2_PDB/resolve/main/VenusX_Evo_AlphaFold2_PDB.zip?download=true
+
+# Dataset types to download (can be overridden via command line)
+dataset_types:
+  - binding_site
+  - active_site
+  - motif
+
+# Download settings
+chunk_size: 8192  # Download chunk size in bytes
+timeout: 300  # Request timeout in seconds

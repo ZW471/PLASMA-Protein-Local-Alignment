@@ -1,0 +1,29 @@
+# @package _global_
+defaults:
+  - _self_
+  - hydra: default
+  - launcher: null
+
+# Baseline evaluation configuration
+job_name: baselines
+task: all  # Process all available tasks
+dataset_path: data/processed  # Path to processed datasets
+datasets:
+  - active_site
+  - binding_site  
+  - motif
+batch_size: 1
+device: null  # Optional: Override device, null for auto-detection
+example_num: 0  # No examples needed for baseline evaluation
+no_target_label: true  # Disable target classification for baselines
+include_no_learning: false  # Include no-learning alignment baseline
+
+# Baseline models to evaluate against
+baseline_models:
+  - prostt5
+  - tm_vec
+  - esm2
+  - protbert
+  - prott5
+  - ankh
+  - protssn

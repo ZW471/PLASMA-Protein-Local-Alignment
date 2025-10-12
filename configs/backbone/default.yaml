@@ -1,0 +1,13 @@
+# Default backbone configuration
+# This is a placeholder - specific backbone configs should inherit from this
+
+defaults:
+  - _self_
+
+# Common backbone parameters
+device: "auto"
+batch_size: 1
+max_sequence_length: 1024
+
+# Default target (should be overridden in specific configs)
+target: null

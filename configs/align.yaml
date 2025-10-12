@@ -1,0 +1,45 @@
+# @package _global_
+defaults:
+  - _self_
+  - hydra: default
+
+# Required parameters (must be provided via command line)
+job_name: "align"                # Job name for Hydra
+query_id: null                   # Query sequence ID
+candidate_id: null               # Candidate sequence ID  
+task: ${query_id}_${candidate_id} # Task name for alignment
+
+# Model configuration
+model:
+  type: "plasma"                 # Model type: "plasma", "plasma-pf", or "backbone"
+  model_cfg:                     # Model-specific configuration
+    # model_path: sweeps/train/20250821_113554/motif/ProstT5/33 # sweeps/train/20250715_203304/active_site/ankh-base/9   
+    # model_path: sweeps/train/20250821_113554/motif/ProtSSN/60
+    model_path: sweeps/train/20250821_113554/motif/ankh-base/15
+  # type: "plasma-pf"
+  # model_cfg:
+  #   omega_kwargs:
+  #     temperature: 0.1
+
+# Dataset configuration (optional - if not provided, will use default based on model type)
+dataset_paths: 
+ - data/raw/3DAC.csv
+ - data/raw/A501.csv
+ - data/raw/full.csv
+
+# Alignment type configuration
+alignment_type: "standard"       # Options: "standard" or "eba"
+
+# EBA configuration (only used if alignment_type is "eba")
+eba:
+  score: "max"                   # Options: "raw", "max", "min"
+
+# Visualization configuration
+visualization:
+  font_size: 32                  # Font size for plots
+  width: 850 # 660                     # Figure width in pixels
+  height: 850                    # Figure height in pixels
+
+# Paths
+output_dir: null
+device: "auto"                   # Device: "auto", "cuda", "cpu"

@@ -1,0 +1,22 @@
+# Configuration for Ankh model
+
+defaults:
+  - plm
+
+# Specific target for Ankh model
+target: backbones.plms.model.PLModels
+
+# Model-specific parameters
+model_name: "ElnaggarLab/ankh-base"
+model_type: "ankh"
+model_key: "ankh-base"
+
+# Cache directory for this specific model
+cache_dir: "weights/ankh-base"
+
+# Output configuration
+embedding_types:
+  - "ankh-base"
+
+# Ankh-specific parameters
+max_length: 1024

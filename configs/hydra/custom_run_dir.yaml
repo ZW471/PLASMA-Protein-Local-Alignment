@@ -1,0 +1,5 @@
+# @package hydra
+defaults:
+  - default
+run:
+  dir: ${output_dir}

@@ -1,0 +1,14 @@
+# @package _global_
+# Plasma alignment module configuration - learned representation learning
+eta:
+  type: lrl
+  hidden_dim: 512
+
+omega:
+  type: sinkhorn
+  temperature: 0.1
+  n_iters: 20
+
+score:
+  K: 10
+  threshold: 0.5

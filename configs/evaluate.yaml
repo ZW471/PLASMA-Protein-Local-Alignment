@@ -1,0 +1,25 @@
+# @package _global_
+defaults:
+  - _self_
+  - hydra: default
+
+# Evaluation configuration
+job_name: evaluate
+task: any # Optional: Override task from model info, 'any' to use model's task
+dataset: null  # Optional: Override dataset from model info, defaults to task
+model_path: null  # Required: Path to trained model or run directory
+backbone_model: null  # Optional: Override backbone model from config
+batch_size: 1  # Optional: Override batch size from config
+device: null  # Optional: Override device from config
+example_num: 2
+no_target_label: false
+skip_no_learning: true  # Set to true to skip no_learning evaluation for faster evaluation
+
+# Baseline models to evaluate against
+baseline_models:
+  # - prostt5
+  # - tm_vec
+  # - esm2
+  # - protbert
+  # - prott5
+  # - ankh

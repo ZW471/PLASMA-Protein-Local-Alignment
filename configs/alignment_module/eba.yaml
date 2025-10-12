@@ -1,0 +1,3 @@
+# @package _global_
+# EBA (Embedding-based Alignment) module configuration
+score: max  # Options: 'raw', 'max', 'min' - determines which EBA score to use for evaluation

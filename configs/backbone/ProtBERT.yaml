@@ -1,0 +1,22 @@
+# Configuration for ProtBERT model
+
+defaults:
+  - plm
+
+# Specific target for ProtBERT model
+target: backbones.plms.model.PLModels
+
+# Model-specific parameters
+model_name: "Rostlab/prot_bert"
+model_type: "bert"
+model_key: "prot_bert"
+
+# Cache directory for this specific model
+cache_dir: "weights/prot_bert"
+
+# Output configuration
+embedding_types:
+  - "prot_bert"
+
+# ProtBERT-specific parameters
+max_length: 1024

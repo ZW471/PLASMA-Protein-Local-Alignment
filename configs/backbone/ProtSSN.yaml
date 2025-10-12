@@ -1,0 +1,35 @@
+# Configuration for ProtSSN model
+
+defaults:
+  - default
+
+# Specific target for ProtSSN model
+target: backbones.protssn.model.ProtSSNModel
+
+# ProtSSN requires PDB files
+need_pdb: true
+
+# Model-specific parameters
+model_key: "ProtSSN"
+gnn_config: "backbones/protssn/egnn.yaml"
+gnn_model_path: "weights/protssn/protssn_k20_h512.pt"
+plm_model: "facebook/esm2_t33_650M_UR50D"
+plm_hidden_size: 1280
+gnn_hidden_dim: 512
+c_alpha_max_neighbors: 10
+gnn: "egnn"
+
+# Cache directory for ESM model weights
+cache_dir: "weights/esm2_t33_650M_UR50D"
+
+# Output configuration
+embedding_types:
+  - "ProtSSN"
+
+levels:
+  - "AA"  # Amino acid (residue) level
+  - "PR"  # Protein level
+
+# ProtSSN-specific parameters
+batch_size: 1  # Due to memory constraints with large protein graphs
+max_sequence_length: 1024  # For sequence filtering, though ProtSSN uses structure

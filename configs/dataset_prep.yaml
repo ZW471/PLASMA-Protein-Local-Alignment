@@ -1,0 +1,27 @@
+# @package _global_
+defaults:
+  - _self_
+  - hydra: default
+
+# Dataset preparation configuration
+job_name: dataset_prep
+task: motif  # choose from: motif, binding_site, active_site, domain, evo, full
+dataset: ${task}
+data_csv_path: null  # Path to the raw dataset CSV file
+output_dir: null  # Directory to save processed datasets
+total_samples: 20000
+train_ratio: 0.75
+val_ratio: 0.05
+exclusion_ratio: 0.1
+max_sequence_length: 1024  # Maximum sequence length filter (-1 for no limit)
+seq_identity_filtering: MP50
+seeds: [0, 42, 100]
+
+# Dataset download links
+base_url: https://huggingface.co/datasets/AI4Protein
+links:
+  motif: ${base_url}/VenusX_Res_Motif_${seq_identity_filtering}
+  binding_site: ${base_url}/VenusX_Res_BindI_${seq_identity_filtering}
+  active_site: ${base_url}/VenusX_Res_Act_${seq_identity_filtering}
+  domain: ${base_url}/VenusX_Res_Dom_${seq_identity_filtering}
+  evo: ${base_url}/VenusX_Res_Evo_${seq_identity_filtering}

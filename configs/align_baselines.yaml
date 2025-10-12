@@ -1,0 +1,40 @@
+# @package _global_
+defaults:
+  - _self_
+  - hydra: default
+  - launcher: null
+
+# Alignment-based baseline evaluation configuration for single task/split/method runs
+job_name: eval_align_baselines
+task: motif  # Specific task to evaluate (motif, active_site, binding_site)
+split: 0     # Specific split number to evaluate
+dataset_path: data/processed  # Path to processed datasets
+batch_size: 1  # Fixed to 1 for alignment methods (sequence-by-sequence processing)
+device: null  # Optional: Override device, null for auto-detection
+
+# Single alignment method to evaluate
+# Note: Methods require structure files (PDB/mmCIF) and will skip pairs without structures
+alignment_method: foldseek  # Options: foldseek, tm_align
+backbone_model: ${alignment_method}
+
+# Dataset sampling for debugging
+dataset_fraction: 1.0  # Fraction of dataset to use (1.0 = full dataset, 0.1 = 10% sample)
+
+# GPU acceleration settings (only for foldseek)
+use_gpu: false  # Enable GPU acceleration for supported tools (requires CUDA)
+gpu_id: 0      # GPU device ID to use (for multi-GPU systems)
+
+# Example multirun configurations:
+# python plasma/eval_align_baselines.py --multirun task=motif,active_site,binding_site alignment_method=foldseek,tm_align split=0,1,2,3,4
+# python plasma/eval_align_baselines.py --multirun task=motif alignment_method=foldseek split=0,1,2,3,4 use_gpu=true,false
+
+# Alignment method specific settings (currently not used but kept for reference)
+foldseek:
+  timeout: 30  # Timeout in seconds for each alignment
+  max_seqs: 1  # Maximum number of sequences to return
+  format_output: "bits"  # Output format (simplified to just bits score)
+
+tm_align:
+  timeout: 60  # Timeout in seconds for each alignment
+  # Note: TM-align requires PDB structure files, not just sequences
+  # TM-align does not support GPU acceleration

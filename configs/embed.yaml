@@ -1,0 +1,33 @@
+# Embed configuration
+defaults:
+  - _self_
+  - hydra: default
+  - backbone: null  # Must be specified via command line
+
+job_name: embed
+task: ${backbone}  # Task name, typically the same as the backbone model
+# Data parameters
+data_path: data/raw  # Required: Path to directory containing full.csv
+deduplicate_column: "uid"  # Column to use for deduplication
+pdb_base_dir: "data/pdb/raw"  # Base directory for PDB files (for structure-based models)
+
+# Model parameters  
+model: ${backbone}  # Automatically set to same value as backbone
+# Supported models/backbones:
+# - TM-Vec_and_ProstT5: Combined TM-Vec and ProstT5 model
+# - ESM2: Facebook ESM2 protein language model
+# - ProtBERT: Rostlab ProtBERT model  
+# - ProtT5: Rostlab ProtT5 model
+# - Ankh: ElnaggarLab Ankh model
+# - ProtSSN: Structure-based protein model using PDB files
+
+# Output parameters
+output_base_path: "data/embeddings"
+overwrite_existing: false
+
+# Processing parameters
+batch_size: 1
+max_sequence_length: 1024
+
+# Device configuration
+device: "auto"  # auto, cuda, cpu

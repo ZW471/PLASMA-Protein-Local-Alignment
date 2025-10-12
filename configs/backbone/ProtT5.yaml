@@ -1,0 +1,22 @@
+# Configuration for ProtT5 model
+
+defaults:
+  - plm
+
+# Specific target for ProtT5 model
+target: backbones.plms.model.PLModels
+
+# Model-specific parameters
+model_name: "Rostlab/prot_t5_xl_half_uniref50-enc"
+model_type: "t5"
+model_key: "prot_t5_xl_half_uniref50-enc"
+
+# Cache directory for this specific model
+cache_dir: "weights/prot_t5_xl_half_uniref50-enc"
+
+# Output configuration
+embedding_types:
+  - "prot_t5_xl_half_uniref50-enc"
+
+# ProtT5-specific parameters
+max_length: 1024

@@ -1,0 +1,13 @@
+# @package _global_
+# Plasma PF alignment module configuration - protein function evaluation with no learning
+eta:
+  type: hinge
+  normalize: true
+
+omega:
+  type: sinkhorn
+  temperature: 0.1
+
+score:
+  K: 10
+  threshold: 0.5

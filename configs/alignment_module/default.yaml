@@ -1,0 +1,13 @@
+# @package _global_
+# Default alignment module configuration
+eta:
+  type: lrl
+  hidden_dim: 512
+
+omega:
+  type: sinkhorn
+  temperature: 0.1
+
+score:
+  K: 10
+  threshold: 0.5
