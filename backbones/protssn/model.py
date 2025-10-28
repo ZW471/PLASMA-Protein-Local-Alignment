@@ -12,6 +12,8 @@ import yaml
 from pathlib import Path
 from typing import Dict, Any, List
 from torch_geometric.data import Data
+import urllib.request
+import urllib.error
 
 # Add current directory to path for imports
 sys.path.append(str(Path(__file__).parent))
@@ -20,6 +22,39 @@ from ..base import BaseBackboneModel
 from .protssn import ProtSSN
 from .models import PLM_model, GNN_model
 from .dataset_utils import NormalizeProtein
+
+
+def download_gnn_weights(save_path: Path, url: str = "https://huggingface.co/tyang816/ProtSSN/resolve/main/protssn_k20_h512.pt") -> bool:
+    """
+    Download GNN weights from HuggingFace if not found locally.
+
+    Args:
+        save_path: Path where to save the downloaded weights
+        url: URL to download the weights from
+
+    Returns:
+        True if download successful, False otherwise
+    """
+    try:
+        print(f"Downloading GNN weights from {url}...")
+        # Create parent directory if it doesn't exist
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Download with progress indication
+        def report_progress(block_num, block_size, total_size):
+            downloaded = block_num * block_size
+            percent = min(downloaded * 100.0 / total_size, 100.0)
+            print(f"\rDownload progress: {percent:.1f}%", end='', flush=True)
+
+        urllib.request.urlretrieve(url, save_path, reporthook=report_progress)
+        print(f"\nSuccessfully downloaded GNN weights to {save_path}")
+        return True
+    except urllib.error.URLError as e:
+        print(f"\nError downloading GNN weights: {e}")
+        return False
+    except Exception as e:
+        print(f"\nUnexpected error downloading GNN weights: {e}")
+        return False
 
 
 class ProtSSNModel(BaseBackboneModel):
@@ -111,17 +146,36 @@ class ProtSSNModel(BaseBackboneModel):
             gnn_model_path = project_root / self.gnn_model_path
             if not gnn_model_path.exists():
                 gnn_model_path = Path(__file__).parent / self.gnn_model_path
-        
-        if gnn_model_path.exists():
-            self.gnn_model.load_state_dict(torch.load(gnn_model_path, map_location=self.device))
+
+        # Download weights from HuggingFace if not found locally
+        if not gnn_model_path.exists():
+            print(f"GNN model weights not found at {gnn_model_path}")
+            if download_gnn_weights(gnn_model_path):
+                print(f"Loading downloaded GNN weights from {gnn_model_path}")
+                self.gnn_model.load_state_dict(torch.load(gnn_model_path, map_location=self.device))
+            else:
+                print(f"Warning: Failed to download GNN weights. Model will run with random initialization.")
         else:
-            print(f"Warning: GNN model weights not found at {gnn_model_path}")
+            print(f"Loading GNN weights from {gnn_model_path}")
+            self.gnn_model.load_state_dict(torch.load(gnn_model_path, map_location=self.device))
         
         # Initialize ProtSSN wrapper
         normalize_path = Path(__file__).parent / f'cath_k{self.c_alpha_max_neighbors}_mean_attr.pt'
+
+        # Only create NormalizeProtein if the normalization file exists
+        pre_transform = None
+        if normalize_path.exists():
+            try:
+                pre_transform = NormalizeProtein(filename=str(normalize_path))
+            except Exception as e:
+                print(f"Warning: Could not load normalization file from {normalize_path}: {e}")
+                pre_transform = None
+        else:
+            print(f"Normalization file not found at {normalize_path}, proceeding without normalization")
+
         self.protssn = ProtSSN(
             c_alpha_max_neighbors=self.c_alpha_max_neighbors,
-            pre_transform=NormalizeProtein(filename=str(normalize_path)) if normalize_path.exists() else None,
+            pre_transform=pre_transform,
             plm_model=self.plm_model,
             gnn_model=self.gnn_model
         )

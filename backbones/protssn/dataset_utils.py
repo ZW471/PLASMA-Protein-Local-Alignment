@@ -4,8 +4,6 @@ import os
 import random
 import csv
 import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
 from datetime import datetime
 from numpy import array, cross, pi, arccos, sqrt
 from tqdm import tqdm
@@ -176,7 +174,7 @@ class NormalizeProtein(BaseTransform):
         self.edge_attr_mean = dic['edge_attr_mean']
         self.edge_attr_std = dic['edge_attr_std']
 
-    def __call__(self, data):
+    def forward(self, data):
         data.x[:, self.skip_x:] = (data.x[:, self.skip_x:] - self.x_mean[self.skip_x:]
                                    ).div_(self.x_std[self.skip_x:] + self.safe_domi)
         data.pos = data.pos - data.pos.mean(dim=-2, keepdim=False)
@@ -185,6 +183,9 @@ class NormalizeProtein(BaseTransform):
                                                    - self.edge_attr_mean[self.skip_edge_attr:]).div_(self.edge_attr_std[self.skip_edge_attr:] + self.safe_domi)
 
         return data
+
+    def __call__(self, data):
+        return self.forward(data)
 # NormalizeProtein(filename = '/home/wang1/xinyexiong/protein/dataset_alpha_Fold/40_10/mean_attr.pt')
 
 

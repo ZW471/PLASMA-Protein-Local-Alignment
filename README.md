@@ -102,6 +102,12 @@ plasma/
 
 ## Getting Started
 
+### 0. Environment Setup
+```bash
+uv sync
+uv pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.8.0+cu126.html
+```
+
 ### 1. Data Download and Preparation
 
 #### Download Dataset CSVs
@@ -119,7 +125,7 @@ For structure-based models like ProtSSN, download corresponding PDB files:
 
 ```bash
 # Download PDB files for multiple tasks
-python download_pdb.py dataset_types=motif,binding_site,active_site --multirun
+python download_pdb.py
 ```
 
 ### 2. Generate Backbone Embeddings
@@ -128,12 +134,12 @@ Generate embeddings using various backbone models:
 
 #### Sequence-based Models
 ```bash
-python embed.py backbone=ESM2,ProtBERT,ProtT5,Ankh,TM-Vec_and_ProstT5 data_path=data/raw/full.csv --multirun
+python embed.py backbone=ESM2,ProtBERT,ProtT5,Ankh,TM-Vec_and_ProstT5 data_path=data/raw/active_site.csv,data/raw/binding_site.csv,data/raw/motif.csv --multirun
 ```
 #### Hybrid Models
 ```bash
 # ProtSSN embeddings (requires PDB files)
-python embed.py backbone=ProtSSN data_path=data/raw/full.csv pdb_base_dir=data/pdb/raw
+python embed.py backbone=ProtSSN data_path=data/raw/active_site.csv,data/raw/binding_site.csv,data/raw/motif.csv pdb_base_dir=data/pdb/raw --multirun
 ```
 
 ## Training
@@ -141,11 +147,11 @@ python embed.py backbone=ProtSSN data_path=data/raw/full.csv pdb_base_dir=data/p
 ### Default Hyperparameters
 
 ```bash
-python train.py backbone_model=prot_bert,ankh-base,TM-Vec,ProstT5,prot_t5_xl_half_uniref50-enc,esm2_t33_650M_UR50D,ProtSSN \ 
+python train.py -m backbone_model=prot_bert,ankh-base,TM-Vec,ProstT5,prot_t5_xl_half_uniref50-enc,esm2_t33_650M_UR50D,ProtSSN \ 
   task=active_site,binding_site,motif \
   split=0,1,2 \
   dataset_fraction=0.1 \
-  launcher=qsub launcher.walltime=01:00:00 --multirun
+  hydra/launcher=joblib hydra.launcher.n_jobs=8 --multirun
 ```
 
 ### Hyperparameter Sweeps

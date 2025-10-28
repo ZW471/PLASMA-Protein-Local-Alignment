@@ -8,7 +8,7 @@ defaults:
 # Training configuration
 job_name: train
 task: motif
-backbone_model: ProstT5  # prot_bert,ankh-base,TM-Vec,ProstT5,prot_t5_xl_half_uniref50-enc,esm2_t33_650M_UR50D,ProtSSN
+backbone_model: ankh-base  # prot_bert,ankh-base,TM-Vec,ProstT5,prot_t5_xl_half_uniref50-enc,esm2_t33_650M_UR50D,ProtSSN
 split: 0
 learning_rate: 1e-4
 num_epochs: 20
