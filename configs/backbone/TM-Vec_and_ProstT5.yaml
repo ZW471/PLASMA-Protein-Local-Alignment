@@ -8,7 +8,7 @@ target: backbones.tm_vec_and_prostt5.model.TMVecAndProstT5Model
 
 # Model-specific parameters
 model_paths:
-  prostt5_model: "weights/ProstT5/models--Rostlab--ProstT5_fp16/snapshots/07a6547d51de603f1be84fd9f2db4680ee535a86"
+  prostt5_model: 'Rostlab/ProstT5'
   tm_vec_checkpoint: "weights/TM-Vec/tm_vec_cath_model.ckpt"
   tm_vec_config: "weights/TM-Vec/tm_vec_cath_model_params.json"
 

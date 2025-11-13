@@ -21,5 +21,5 @@ target_loss_weight: 1.0
 supervise_metric: loss  # rocauc, prauc, f1max, loss, label_match_score
 enable_cleanup: false
 test: true
-dataset_fraction: 1
+dataset_fraction: 0.1
 

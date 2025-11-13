@@ -1,5 +1,4 @@
 from typing import Tuple, List
-
 import torch
 from torch import nn
 
@@ -16,7 +15,7 @@ def dot_product(
         H_c: torch.Tensor,
         batch_q: torch.Tensor,
         batch_c: torch.Tensor
-    ) -> torch.Tensor:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
     return masked_out(batch_c, batch_q, torch.matmul(H_q, H_c.T))
 
 # 20x faster
