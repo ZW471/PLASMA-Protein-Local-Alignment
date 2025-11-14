@@ -27,8 +27,8 @@ dependencies = [
     "plotly>=6.3.1",
     "hydra-joblib-launcher>=1.2.0",
     "sentencepiece>=0.2.1",
-    "notebook>=7.4.7",
     "lightning>=2.5.6",
+    "hydra-submitit-launcher>=1.2.0",
 ]
 
 [[tool.uv.index]]

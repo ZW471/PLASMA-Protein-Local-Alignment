@@ -15,7 +15,7 @@ from loguru import logger
 import torch.nn.functional as F
 from omegaconf import DictConfig
 
-def max_main_diag_score(x: torch.Tensor, T: int = 10) -> torch.Tensor:
+def max_main_diag_score(x: torch.Tensor, T: int = 10) -> float:
     if T > 0:
         kernel = torch.eye(T, device=x.device, dtype=torch.float32)  # (T,T)
         kernel = kernel.view(1, 1, T, T) 

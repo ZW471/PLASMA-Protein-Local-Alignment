@@ -2,130 +2,89 @@
 Training script for alignment model using dataset splits.
 """
 
-import torch
+# Keep only essential non-torch imports at module level
+import os
 import sys
 import pandas as pd
 from pathlib import Path
-from torch.optim import Adam
-from torch.nn import BCEWithLogitsLoss
-from torch_geometric.loader import DataLoader
-from torchmetrics.classification import BinaryAUROC, BinaryAveragePrecision
 from tqdm import tqdm
-from loguru import logger
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import random
 import time
 
-from alignment.alignment import Alignment
-from utils import (
-    convert_pairs_to_dataset,
-    get_batch_embeddings,
-    add_target_labels_batch,
-    count_pos_neg,
-    alignment_score,
-    label_match_loss,
-    create_run_directory,
-    setup_logging
-)
-from utils.time_utils import TimeTracker
-
-def compute_f1_max(scores, targets):
-    """Compute F1Max by finding the threshold that maximizes F1 score."""
-    from sklearn.metrics import f1_score
-    import numpy as np
-    
-    scores_np = scores.detach().cpu().numpy() if hasattr(scores, 'detach') else scores
-    targets_np = targets.detach().cpu().numpy() if hasattr(targets, 'detach') else targets
-    
-    # Generate threshold range based on score distribution
-    thresholds = np.linspace(scores_np.min(), scores_np.max(), 1000)
-    f1_scores = []
-    
-    for threshold in thresholds:
-        predictions = (scores_np >= threshold).astype(int)
-        if len(np.unique(predictions)) > 1:  # Avoid division by zero
-            f1 = f1_score(targets_np, predictions, zero_division=0)
-        else:
-            f1 = 0.0
-        f1_scores.append(f1)
-    
-    return max(f1_scores)
+# Note: All torch imports are moved inside main() to ensure CUDA_VISIBLE_DEVICES
+# is set in the subprocess before torch initializes CUDA (for submitit compatibility)
 
 
 @hydra.main(version_base=None, config_path="configs", config_name="train")
 def main(cfg: DictConfig) -> None:
     from hydra.core.hydra_config import HydraConfig
     from datetime import datetime
-    import os
-    
-    # Check if qsub launcher is configured
-    if hasattr(cfg, 'launcher') and cfg.launcher is not None:
-        # Import launcher utilities  
-        import sys  # Re-import to ensure scope
-        from utils.launcher_utils import create_launcher
-        
-        # Get the current job's configuration to build the correct command
-        if HydraConfig.initialized():
-            hydra_cfg = HydraConfig.get()
-            # Get the overrides for this specific job
-            job_overrides = hydra_cfg.job.override_dirname.split(',') if hydra_cfg.job.override_dirname else []
-            
-            # Remove launcher-specific overrides
-            filtered_overrides = []
-            for override in job_overrides:
-                if (not override.startswith("launcher=") and 
-                    not override.startswith("hydra/launcher=") and 
-                    not override.startswith("launcher.")):
-                    filtered_overrides.append(override)
-            
-            # Get the Hydra output directory for this job
-            job_output_dir = Path(hydra_cfg.runtime.output_dir)
-            
-            # Add hydra output directory override to preserve sweep structure
-            hydra_override = f"hydra.run.dir={job_output_dir}"
-            filtered_overrides.append(hydra_override)
-            
-            # Construct the command using the filtered overrides
-            script_name = sys.argv[0]
-            if filtered_overrides:
-                command = f"python {script_name} {' '.join(filtered_overrides)}"
+
+    # CRITICAL: Set CUDA_VISIBLE_DEVICES BEFORE importing torch
+    # This ensures that when submitit runs this function in a subprocess,
+    # torch will be imported with the correct GPU visibility
+
+    # For multirun sweeps with LocalLauncher, use hydra.job.num to assign GPUs
+    if HydraConfig.initialized():
+        hydra_cfg = HydraConfig.get()
+        job_num = hydra_cfg.job.num if hasattr(hydra_cfg.job, 'num') else 0
+
+        # Assign GPU based on job number (round-robin across 8 GPUs)
+        available_gpus = [0, 1, 2, 3, 4, 5, 6, 7]
+        assigned_gpu = available_gpus[job_num % len(available_gpus)]
+        os.environ['CUDA_VISIBLE_DEVICES'] = str(assigned_gpu)
+    elif 'SUBMITIT_GPU_IDS' in os.environ:
+        os.environ['CUDA_VISIBLE_DEVICES'] = os.environ['SUBMITIT_GPU_IDS']
+    elif 'CUDA_VISIBLE_DEVICES' not in os.environ or os.environ['CUDA_VISIBLE_DEVICES'] == '':
+        os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3,4,5,6,7'
+
+    # Now import torch and all torch-dependent modules
+    import torch
+    from torch.optim import Adam
+    from torch.nn import BCEWithLogitsLoss
+    from torch_geometric.loader import DataLoader
+    from torchmetrics.classification import BinaryAUROC, BinaryAveragePrecision
+    from loguru import logger
+
+    # Import our modules that depend on torch
+    from alignment.alignment import Alignment
+    from utils import (
+        convert_pairs_to_dataset,
+        get_batch_embeddings,
+        add_target_labels_batch,
+        count_pos_neg,
+        alignment_score,
+        label_match_loss,
+        create_run_directory,
+        setup_logging
+    )
+    from utils.time_utils import TimeTracker
+
+    # Helper function for F1Max computation
+    def compute_f1_max(scores, targets):
+        """Compute F1Max by finding the threshold that maximizes F1 score."""
+        from sklearn.metrics import f1_score
+        import numpy as np
+
+        scores_np = scores.detach().cpu().numpy() if hasattr(scores, 'detach') else scores
+        targets_np = targets.detach().cpu().numpy() if hasattr(targets, 'detach') else targets
+
+        # Generate threshold range based on score distribution
+        thresholds = np.linspace(scores_np.min(), scores_np.max(), 1000)
+        f1_scores = []
+
+        for threshold in thresholds:
+            predictions = (scores_np >= threshold).astype(int)
+            if len(np.unique(predictions)) > 1:  # Avoid division by zero
+                f1 = f1_score(targets_np, predictions, zero_division=0)
             else:
-                command = f"python {script_name}"
-        else:
-            # Fallback: reconstruct from sys.argv
-            original_args = []
-            if len(sys.argv) > 1:
-                original_args = sys.argv[1:]
-            
-            # Remove launcher-specific arguments and multirun flag
-            filtered_args = []
-            for arg in original_args:
-                if (not arg.startswith("launcher=") and 
-                    not arg.startswith("hydra/launcher=") and 
-                    not arg.startswith("launcher.") and
-                    arg != "--multirun"):
-                    filtered_args.append(arg)
-            
-            script_name = sys.argv[0]
-            command = f"python {script_name} {' '.join(filtered_args)}"
-        
-        # Create launcher config with Hydra directory info
-        launcher_config = OmegaConf.to_container(cfg, resolve=True)
-        if HydraConfig.initialized():
-            # Add Hydra runtime info to launcher config
-            launcher_config['hydra_output_dir'] = str(job_output_dir)
-        
-        launcher = create_launcher(launcher_config)
-        job_id = launcher.submit_job(command, launcher_config)
-        
-        if job_id:
-            print(f"Successfully submitted job: {job_id}")
-        else:
-            print("Job submission completed (debug mode or script generation)")
-        
-        return  # Exit without running training locally
-    
+                f1 = 0.0
+            f1_scores.append(f1)
+
+        return max(f1_scores)
+
     # Get run directory from Hydra or create manually
     if HydraConfig.initialized():
         hydra_cfg = HydraConfig.get()
@@ -134,27 +93,40 @@ def main(cfg: DictConfig) -> None:
         # Fallback to manual directory creation
         from utils.run_utils import create_run_directory
         run_dir = create_run_directory(f"{cfg.task}_split{cfg.split}")
-    
+
     # Set random seeds
     torch.manual_seed(cfg.seed)
     torch.cuda.manual_seed(cfg.seed)
     random.seed(cfg.seed)
     torch.cuda.empty_cache()
-    
+
     # Setup device
     if cfg.device == "auto":
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        # Log GPU availability for debugging
+        if torch.cuda.is_available():
+            logger.info(f"CUDA available: {torch.cuda.device_count()} GPUs")
+            logger.info(f"Current GPU: {torch.cuda.current_device()} - {torch.cuda.get_device_name(0)}")
+        else:
+            logger.warning("CUDA not available, using CPU")
+            logger.warning(f"CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES', 'not set')}")
     else:
         device = torch.device(cfg.device)
     
     # Setup logging
     setup_logging(run_dir, f"{cfg.task}_split{cfg.split}")
-    
+
+    # Log GPU assignment info
+    if HydraConfig.initialized():
+        hydra_cfg = HydraConfig.get()
+        if hasattr(hydra_cfg.job, 'num'):
+            logger.info(f"Hydra job number: {hydra_cfg.job.num}, Assigned GPU: {os.environ.get('CUDA_VISIBLE_DEVICES', 'unknown')}")
+
     # Define paths
     plasma_dir = Path(__file__).parent
     data_dir = plasma_dir / "data"
     splits_dir = plasma_dir / "data" / "processed" / cfg.task / f"split_{cfg.split}"
-    
+
     logger.success(f"Task: {cfg.task}")
     logger.success(f"Backbone model: {cfg.backbone_model}")
     logger.success(f"Split index: {cfg.split}")
