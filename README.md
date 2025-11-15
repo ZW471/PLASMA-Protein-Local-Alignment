@@ -228,9 +228,19 @@ python eval_align_baselines.py \
   launcher=qsub launcher.walltime=04:00:00 launcher.queue=huge launcher.resources.ngpus=0 --multirun
 ```
 
+### PLASMA-PF
+```bash
+python evaluate_pf.py \
+  backbone_model=prot_bert,ankh-base,TM-Vec,ProstT5,prot_t5_xl_half_uniref50-enc,esm2_t33_650M_UR50D,ProtSSN \
+  task=active_site,binding_site,motif \
+  split=0,1,2 \
+  launcher=qsub launcher.walltime=00:30:00 --multirun
+```
+
 ### EBA (https://git.scicore.unibas.ch/schwede/EBA)
 ```bash
 python evaluate_pf.py \
+  alignment_module=eba \
   backbone_model=prot_bert,ankh-base,TM-Vec,ProstT5,prot_t5_xl_half_uniref50-enc,esm2_t33_650M_UR50D,ProtSSN \
   task=active_site,binding_site,motif \
   split=0,1,2 \

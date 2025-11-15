@@ -5,226 +5,19 @@ This script evaluates no-learning alignment models across all datasets and split
 using AA-level embeddings and the Alignment model with specified parameters.
 """
 
-import torch
+# Keep only essential non-torch imports at module level
+import os
 import sys
 import pandas as pd
-import numpy as np
 import json
 import random
 import time
 from pathlib import Path
-from torch_geometric.loader import DataLoader
-from loguru import logger
 import hydra
 from omegaconf import DictConfig
-from alignment.alignment import Alignment
-from utils import (
-    convert_pairs_to_dataset,
-    get_batch_embeddings,
-    add_target_labels_batch,
-    count_pos_neg,
-    label_match_loss,
-    setup_logging
-)
-from utils.time_utils import TimeTracker
 
-# EBA imports
-try:
-    from EBA.eba import methods as eba_methods
-    from EBA.eba import score_matrices as eba_sm
-    EBA_AVAILABLE = True
-except ImportError:
-    EBA_AVAILABLE = False
-
-
-def compute_f1_max(scores, targets):
-    """Compute F1Max by finding the threshold that maximizes F1 score."""
-    from sklearn.metrics import f1_score
-    import numpy as np
-    
-    scores_np = scores.detach().cpu().numpy() if hasattr(scores, 'detach') else scores
-    targets_np = targets.detach().cpu().numpy() if hasattr(targets, 'detach') else targets
-    
-    # Generate threshold range based on score distribution
-    thresholds = np.linspace(scores_np.min(), scores_np.max(), 1000)
-    f1_scores = []
-    
-    for threshold in thresholds:
-        predictions = (scores_np >= threshold).astype(int)
-        if len(np.unique(predictions)) > 1:  # Avoid division by zero
-            f1 = f1_score(targets_np, predictions, zero_division=0)
-        else:
-            f1 = 0.0
-        f1_scores.append(f1)
-    
-    return max(f1_scores)
-
-
-def create_alignment_model(cfg, device):
-    """Create alignment model from config."""
-    # Check if EBA alignment is requested (EBA config only has 'score' field)
-    is_eba = hasattr(cfg, 'score') and isinstance(cfg.score, str) and cfg.score in ['raw', 'max', 'min']
-    if is_eba:
-        if not EBA_AVAILABLE:
-            raise ImportError("EBA library not available. Please install EBA to use EBA alignment.")
-        return None  # EBA doesn't use the Alignment class
-    
-    # Build eta_kwargs based on configuration
-    eta_kwargs = {}
-    if cfg.eta.type == 'lrl':
-        eta_kwargs['hidden_dim'] = cfg.eta.hidden_dim
-    elif cfg.eta.type == 'hinge' and hasattr(cfg.eta, 'normalize'):
-        eta_kwargs['normalize'] = cfg.eta.normalize
-    
-    # Build omega_kwargs based on configuration  
-    omega_kwargs = {}
-    if cfg.omega.type == 'sinkhorn' and hasattr(cfg.omega, 'temperature'):
-        omega_kwargs['temperature'] = cfg.omega.temperature
-    
-    alignment = Alignment(
-        eta=cfg.eta.type, 
-        omega=cfg.omega.type, 
-        eta_kwargs=eta_kwargs,
-        omega_kwargs=omega_kwargs
-    ).to(device)
-    
-    return alignment
-
-
-def evaluate_alignment_model(data_loader, dataset_name, seq_embeddings, device, df_full, cfg, timer=None):
-    """Evaluate alignment model on dataset."""
-    from torchmetrics.classification import BinaryAUROC, BinaryAveragePrecision
-    from tqdm import tqdm
-    
-    # Initialize metrics
-    auc = BinaryAUROC()
-    pr_auc = BinaryAveragePrecision()
-    scores_list = []
-    targets_list = []
-    
-    # Initialize label match score tracking (positive samples only)
-    label_match_scores_positive = []
-    
-    # Create alignment model
-    alignment_model = create_alignment_model(cfg, device)
-    use_eba = hasattr(cfg, 'score') and isinstance(cfg.score, str) and cfg.score in ['raw', 'max', 'min']
-    if not use_eba:
-        alignment_model.eval()
-    
-    skip_count = 0
-    
-    with torch.no_grad():
-        for batch in tqdm(data_loader, desc=f"Evaluating {dataset_name}"):
-            try:
-                # Start timing for this batch if timer is provided
-                batch_start_time = time.time() if timer is not None else None
-                
-                batch = batch.to(device)
-                
-                # Get embeddings on-the-fly from CPU dictionary
-                query_emb, candidate_emb, _, _, query_emb_batch, candidate_emb_batch = get_batch_embeddings(batch, seq_embeddings, device)
-                
-                # Skip if no embeddings found
-                if query_emb.numel() == 0 or candidate_emb.numel() == 0:
-                    skip_count += 1
-                    # Reset batch timing since we're skipping this batch
-                    batch_start_time = None
-                    continue
-                
-                # Compute alignment matrix and score
-                if use_eba:
-                    # Use EBA for alignment
-                    similarity_matrix = eba_sm.compute_similarity_matrix(query_emb, candidate_emb)
-                    eba_results = eba_methods.compute_eba(similarity_matrix)
-                    
-                    # Select the appropriate EBA score based on config
-                    if cfg.score == 'raw':
-                        eba_score = eba_results['EBA_raw']
-                    elif cfg.score == 'max':
-                        eba_score = eba_results['EBA_max']
-                    elif cfg.score == 'min':
-                        eba_score = eba_results['EBA_min']
-                    else:
-                        raise ValueError('Invalid score type: ', cfg.score)
-                    
-                    sim = torch.tensor([eba_score], device=device)
-                    # For EBA, we need to normalize the similarity matrix for label match calculation
-                    M = similarity_matrix
-                    # Min-max normalization for EBA alignment matrix
-                    M_min = M.min()
-                    M_max = M.max() 
-                    if M_max > M_min:
-                        M = (M - M_min) / (M_max - M_min)
-                else:
-                    # Use standard alignment model
-                    from utils.alignment_utils import alignment_score
-                    M = alignment_model(query_emb, candidate_emb, query_emb_batch, candidate_emb_batch)
-                    sim = alignment_score(query_emb, candidate_emb, M, candidate_emb_batch, threshold=cfg.score.threshold, K=cfg.score.K)
-                
-                # Update metrics
-                auc.update(sim.detach().cpu(), batch.y.cpu())
-                pr_auc.update(sim.detach().cpu(), batch.y.cpu())
-                
-                # Store scores and targets for F1Max calculation
-                scores_list.extend(sim.detach().cpu().tolist())
-                targets_list.extend(batch.y.cpu().tolist())
-                
-                # Calculate label match score if target labels are available
-                try:
-                    # Get target labels for this batch
-                    query_targets, candidate_targets = add_target_labels_batch(batch, df_full, query_emb_batch, candidate_emb_batch)
-                    query_targets = query_targets.to(device)
-                    candidate_targets = candidate_targets.to(device)
-                    
-                    # Calculate label match loss and convert to score (1 - loss)
-                    is_match = batch.y.bool().item() if batch.y.numel() == 1 else True
-                    label_match_loss_val = label_match_loss(query_targets, candidate_targets, M, is_match=is_match)
-                    label_match_score = 1.0 - label_match_loss_val.item()
-                    
-                    # Only store label match score for positive classes (since negative always returns 0)
-                    if is_match:
-                        label_match_scores_positive.append(label_match_score)
-                        
-                except Exception as e:
-                    # Skip label match calculation if target labels are not available or other error
-                    pass
-                
-                # End timing for this batch if timer is provided
-                if timer is not None and batch_start_time is not None:
-                    batch_end_time = time.time()
-                    batch_time = batch_end_time - batch_start_time
-                    batch_size = len(batch.y)  # Number of samples in this batch
-                    timer.add_sample_time(batch_time, batch_size)
-                
-                # Memory cleanup
-                del M, sim, query_emb, candidate_emb, query_emb_batch, candidate_emb_batch
-                torch.cuda.empty_cache()
-                
-            except RuntimeError as e:
-                logger.error(f"Error processing batch: {e}")
-                skip_count += 1
-                continue
-    
-    # Compute final scores with "no_learning" key structure to match train evaluation format
-    results = {
-        'metrics': {
-            'rocauc': {
-                'no_learning': auc.compute().item()
-            },
-            'pr_auc': {
-                'no_learning': pr_auc.compute().item()
-            },
-            'f1_max': {
-                'no_learning': compute_f1_max(torch.tensor(scores_list), torch.tensor(targets_list)) if scores_list else 0.0
-            },
-            'label_match_score': {
-                'no_learning': sum(label_match_scores_positive) / len(label_match_scores_positive) if label_match_scores_positive else 0.0
-            }
-        },
-        'skipped': skip_count
-    }
-    
-    return results
+# Note: All torch imports are moved inside main() to ensure CUDA_VISIBLE_DEVICES
+# is set in the subprocess before torch initializes CUDA (for submitit compatibility)
 
 
 
@@ -233,8 +26,238 @@ def evaluate_alignment_model(data_loader, dataset_name, seq_embeddings, device, 
 def main(cfg: DictConfig) -> None:
     from hydra.core.hydra_config import HydraConfig
     from datetime import datetime
-    import os
-    
+
+    # CRITICAL: Set CUDA_VISIBLE_DEVICES BEFORE importing torch
+    # This ensures that when submitit runs this function in a subprocess,
+    # torch will be imported with the correct GPU visibility
+
+    # For multirun sweeps with LocalLauncher, use hydra.job.num to assign GPUs
+    if HydraConfig.initialized():
+        hydra_cfg = HydraConfig.get()
+        job_num = hydra_cfg.job.num if hasattr(hydra_cfg.job, 'num') else 0
+
+        # Assign GPU based on job number (round-robin across 8 GPUs)
+        available_gpus = [0, 1, 2, 3, 4, 5, 6, 7]
+        assigned_gpu = available_gpus[job_num % len(available_gpus)]
+        os.environ['CUDA_VISIBLE_DEVICES'] = str(assigned_gpu)
+    elif 'SUBMITIT_GPU_IDS' in os.environ:
+        os.environ['CUDA_VISIBLE_DEVICES'] = os.environ['SUBMITIT_GPU_IDS']
+    elif 'CUDA_VISIBLE_DEVICES' not in os.environ or os.environ['CUDA_VISIBLE_DEVICES'] == '':
+        os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3,4,5,6,7'
+
+    # Now import torch and all torch-dependent modules
+    import torch
+    import numpy as np
+    from torch_geometric.loader import DataLoader
+    from loguru import logger
+
+    # Import our modules that depend on torch
+    from alignment.alignment import Alignment
+    from utils import (
+        convert_pairs_to_dataset,
+        get_batch_embeddings,
+        add_target_labels_batch,
+        count_pos_neg,
+        label_match_loss,
+        setup_logging
+    )
+    from utils.time_utils import TimeTracker
+
+    # EBA imports
+    try:
+        from EBA.eba import methods as eba_methods
+        from EBA.eba import score_matrices as eba_sm
+        EBA_AVAILABLE = True
+    except ImportError:
+        EBA_AVAILABLE = False
+
+    # Helper functions (defined inside main to have access to imports)
+    def compute_f1_max(scores, targets):
+        """Compute F1Max by finding the threshold that maximizes F1 score."""
+        from sklearn.metrics import f1_score
+
+        scores_np = scores.detach().cpu().numpy() if hasattr(scores, 'detach') else scores
+        targets_np = targets.detach().cpu().numpy() if hasattr(targets, 'detach') else targets
+
+        # Generate threshold range based on score distribution
+        thresholds = np.linspace(scores_np.min(), scores_np.max(), 1000)
+        f1_scores = []
+
+        for threshold in thresholds:
+            predictions = (scores_np >= threshold).astype(int)
+            if len(np.unique(predictions)) > 1:  # Avoid division by zero
+                f1 = f1_score(targets_np, predictions, zero_division=0)
+            else:
+                f1 = 0.0
+            f1_scores.append(f1)
+
+        return max(f1_scores)
+
+    def create_alignment_model(cfg, device):
+        """Create alignment model from config."""
+        # Check if EBA alignment is requested (EBA config only has 'score' field)
+        is_eba = hasattr(cfg, 'score') and isinstance(cfg.score, str) and cfg.score in ['raw', 'max', 'min']
+        if is_eba:
+            if not EBA_AVAILABLE:
+                raise ImportError("EBA library not available. Please install EBA to use EBA alignment.")
+            return None  # EBA doesn't use the Alignment class
+
+        # Build eta_kwargs based on configuration
+        eta_kwargs = {}
+        if cfg.eta.type == 'lrl':
+            eta_kwargs['hidden_dim'] = cfg.eta.hidden_dim
+        elif cfg.eta.type == 'hinge' and hasattr(cfg.eta, 'normalize'):
+            eta_kwargs['normalize'] = cfg.eta.normalize
+
+        # Build omega_kwargs based on configuration
+        omega_kwargs = {}
+        if cfg.omega.type == 'sinkhorn' and hasattr(cfg.omega, 'temperature'):
+            omega_kwargs['temperature'] = cfg.omega.temperature
+
+        alignment = Alignment(
+            eta=cfg.eta.type,
+            omega=cfg.omega.type,
+            eta_kwargs=eta_kwargs,
+            omega_kwargs=omega_kwargs
+        ).to(device)
+
+        return alignment
+
+    def evaluate_alignment_model(data_loader, dataset_name, seq_embeddings, device, df_full, cfg, timer=None):
+        """Evaluate alignment model on dataset."""
+        from torchmetrics.classification import BinaryAUROC, BinaryAveragePrecision
+        from tqdm import tqdm
+
+        # Initialize metrics
+        auc = BinaryAUROC()
+        pr_auc = BinaryAveragePrecision()
+        scores_list = []
+        targets_list = []
+
+        # Initialize label match score tracking (positive samples only)
+        label_match_scores_positive = []
+
+        # Create alignment model
+        alignment_model = create_alignment_model(cfg, device)
+        use_eba = hasattr(cfg, 'score') and isinstance(cfg.score, str) and cfg.score in ['raw', 'max', 'min']
+        if not use_eba:
+            alignment_model.eval()
+
+        skip_count = 0
+
+        with torch.no_grad():
+            for batch in tqdm(data_loader, desc=f"Evaluating {dataset_name}"):
+                try:
+                    # Start timing for this batch if timer is provided
+                    batch_start_time = time.time() if timer is not None else None
+
+                    batch = batch.to(device)
+
+                    # Get embeddings on-the-fly from CPU dictionary
+                    query_emb, candidate_emb, _, _, query_emb_batch, candidate_emb_batch = get_batch_embeddings(batch, seq_embeddings, device)
+
+                    # Skip if no embeddings found
+                    if query_emb.numel() == 0 or candidate_emb.numel() == 0:
+                        skip_count += 1
+                        # Reset batch timing since we're skipping this batch
+                        batch_start_time = None
+                        continue
+
+                    # Compute alignment matrix and score
+                    if use_eba:
+                        # Use EBA for alignment
+                        similarity_matrix = eba_sm.compute_similarity_matrix(query_emb, candidate_emb)
+                        eba_results = eba_methods.compute_eba(similarity_matrix)
+
+                        # Select the appropriate EBA score based on config
+                        if cfg.score == 'raw':
+                            eba_score = eba_results['EBA_raw']
+                        elif cfg.score == 'max':
+                            eba_score = eba_results['EBA_max']
+                        elif cfg.score == 'min':
+                            eba_score = eba_results['EBA_min']
+                        else:
+                            raise ValueError('Invalid score type: ', cfg.score)
+
+                        sim = torch.tensor([eba_score], device=device)
+                        # For EBA, we need to normalize the similarity matrix for label match calculation
+                        M = similarity_matrix
+                        # Min-max normalization for EBA alignment matrix
+                        M_min = M.min()
+                        M_max = M.max()
+                        if M_max > M_min:
+                            M = (M - M_min) / (M_max - M_min)
+                    else:
+                        # Use standard alignment model
+                        from utils.alignment_utils import alignment_score
+                        M = alignment_model(query_emb, candidate_emb, query_emb_batch, candidate_emb_batch)
+                        sim = alignment_score(query_emb, candidate_emb, M, candidate_emb_batch, threshold=cfg.score.threshold, K=cfg.score.K)
+
+                    # Update metrics
+                    auc.update(sim.detach().cpu(), batch.y.cpu())
+                    pr_auc.update(sim.detach().cpu(), batch.y.cpu())
+
+                    # Store scores and targets for F1Max calculation
+                    scores_list.extend(sim.detach().cpu().tolist())
+                    targets_list.extend(batch.y.cpu().tolist())
+
+                    # Calculate label match score if target labels are available
+                    try:
+                        # Get target labels for this batch
+                        query_targets, candidate_targets = add_target_labels_batch(batch, df_full, query_emb_batch, candidate_emb_batch)
+                        query_targets = query_targets.to(device)
+                        candidate_targets = candidate_targets.to(device)
+
+                        # Calculate label match loss and convert to score (1 - loss)
+                        is_match = batch.y.bool().item() if batch.y.numel() == 1 else True
+                        label_match_loss_val = label_match_loss(query_targets, candidate_targets, M, is_match=is_match)
+                        label_match_score = 1.0 - label_match_loss_val.item()
+
+                        # Only store label match score for positive classes (since negative always returns 0)
+                        if is_match:
+                            label_match_scores_positive.append(label_match_score)
+
+                    except Exception as e:
+                        # Skip label match calculation if target labels are not available or other error
+                        pass
+
+                    # End timing for this batch if timer is provided
+                    if timer is not None and batch_start_time is not None:
+                        batch_end_time = time.time()
+                        batch_time = batch_end_time - batch_start_time
+                        batch_size = len(batch.y)  # Number of samples in this batch
+                        timer.add_sample_time(batch_time, batch_size)
+
+                    # Memory cleanup
+                    del M, sim, query_emb, candidate_emb, query_emb_batch, candidate_emb_batch
+                    torch.cuda.empty_cache()
+
+                except RuntimeError as e:
+                    logger.error(f"Error processing batch: {e}")
+                    skip_count += 1
+                    continue
+
+        # Compute final scores with "no_learning" key structure to match train evaluation format
+        results = {
+            'metrics': {
+                'rocauc': {
+                    'no_learning': auc.compute().item()
+                },
+                'pr_auc': {
+                    'no_learning': pr_auc.compute().item()
+                },
+                'f1_max': {
+                    'no_learning': compute_f1_max(torch.tensor(scores_list), torch.tensor(targets_list)) if scores_list else 0.0
+                },
+                'label_match_score': {
+                    'no_learning': sum(label_match_scores_positive) / len(label_match_scores_positive) if label_match_scores_positive else 0.0
+                }
+            },
+            'skipped': skip_count
+        }
+
+        return results
+
     # Check if qsub launcher is configured
     if hasattr(cfg, 'launcher') and cfg.launcher is not None:
         # Import launcher utilities  
@@ -305,7 +328,7 @@ def main(cfg: DictConfig) -> None:
     
     # Initialize time tracker
     timer = TimeTracker("evaluation")
-    
+
     # Get run directory from Hydra or create manually
     if HydraConfig.initialized():
         hydra_cfg = HydraConfig.get()
@@ -314,13 +337,26 @@ def main(cfg: DictConfig) -> None:
         # Fallback to manual directory creation following train.py structure
         from utils.run_utils import create_run_directory
         run_dir = create_run_directory(f"{cfg.task}_split{cfg.split}")
-    
+
+    # Set random seeds
+    torch.manual_seed(cfg.seed)
+    torch.cuda.manual_seed(cfg.seed)
+    random.seed(cfg.seed)
+    torch.cuda.empty_cache()
+
     # Setup device
-    if cfg.device is None:
+    if cfg.device == "auto":
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    else: 
+        # Log GPU availability for debugging
+        if torch.cuda.is_available():
+            logger.info(f"CUDA available: {torch.cuda.device_count()} GPUs")
+            logger.info(f"Current GPU: {torch.cuda.current_device()} - {torch.cuda.get_device_name(0)}")
+        else:
+            logger.warning("CUDA not available, using CPU")
+            logger.warning(f"CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES', 'not set')}")
+    else:
         device = torch.device(cfg.device)
-    
+
     # Define paths
     plasma_dir = Path(__file__).parent
     data_dir = plasma_dir / "data"
@@ -345,7 +381,13 @@ def main(cfg: DictConfig) -> None:
     
     # Setup logging
     setup_logging(run_dir, f"{cfg.task}_split{cfg.split}_pf_evaluation")
-    
+
+    # Log GPU assignment info
+    if HydraConfig.initialized():
+        hydra_cfg = HydraConfig.get()
+        if hasattr(hydra_cfg.job, 'num'):
+            logger.info(f"Hydra job number: {hydra_cfg.job.num}, Assigned GPU: {os.environ.get('CUDA_VISIBLE_DEVICES', 'unknown')}")
+
     # Load original dataset for metadata and get unique UIDs
     logger.success("Loading dataset...")
     df_full = pd.read_csv(plasma_dir / "data" / "raw" / f"{cfg.task}.csv")

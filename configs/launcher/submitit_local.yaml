@@ -15,3 +15,5 @@ submitit_folder: ${hydra.sweep.dir}/.submitit/%j
 
 # Redirect stderr to stdout to consolidate logs
 stderr_to_stdout: true
+slurm_max_num_timeout: 8
+max_num_timeout: 8  # Try this parameter instead
