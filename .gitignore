@@ -20,3 +20,7 @@ foldseek/
 tmalign/
 
 EBA/
+
+*.tar.gz
+/submitit_logs
+.hf_staging/

@@ -100,6 +100,22 @@ plasma/
 └── evaluate.py                        # Model evaluation script
 ```
 
+## Pretrained models
+
+The trained PLASMA heads for every (task, backbone) combination from the
+paper are hosted on the Hugging Face Hub at
+[`zhiyuw/plasma`](https://huggingface.co/zhiyuw/plasma). They can be loaded
+straight into the `Alignment` class:
+
+```python
+from alignment import load_plasma  # high-level helper
+
+model = load_plasma(task="active_site", backbone="prot_bert")
+```
+
+PLASMA-PF is parameter-free — `from alignment import load_plasma_pf` returns
+the published hinge / Sinkhorn configuration with no download.
+
 ## Getting Started
 
 ### 0. Environment Setup

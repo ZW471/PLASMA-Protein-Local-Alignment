@@ -2,6 +2,7 @@ from typing import Set, Literal
 
 import torch
 from torch import nn
+from huggingface_hub import PyTorchModelHubMixin
 
 from .interaction_nonlinearity import Hinge, LRL, DotProduct
 from .interaction_structures import Sinkhorn
@@ -9,7 +10,21 @@ from .interaction_structures import Sinkhorn
 InteractionNonlinearity: Set[str] = {"hinge", "lrl"}
 InteractionStructure: Set[str] = {"sinkhorn"}
 
-class Alignment(nn.Module):
+class Alignment(
+    nn.Module,
+    PyTorchModelHubMixin,
+    library_name="plasma-protein-local-alignment",
+    repo_url="https://github.com/ZW471/PLASMA-Protein-Local-Alignment",
+    tags=[
+        "protein",
+        "protein-language-model",
+        "alignment",
+        "optimal-transport",
+        "sinkhorn",
+        "bioinformatics",
+        "biology",
+    ],
+):
     def __init__(self, eta: InteractionNonlinearity, omega: InteractionStructure, eta_kwargs: dict = None, omega_kwargs: dict = None):
         """
         Initializes the object with specified interaction nonlinearity and interaction structure.
@@ -109,3 +124,26 @@ class Alignment(nn.Module):
     @staticmethod
     def reduce(alignment_matrix):
         return alignment_matrix.max(dim=1), alignment_matrix.max(dim=0)
+
+    @classmethod
+    def _load_as_safetensor(
+        cls,
+        model: "Alignment",
+        model_file: str,
+        map_location: str,
+        strict: bool,
+    ) -> "Alignment":
+        """Override the mixin's safetensors loader to support lazy modules.
+
+        ``safetensors.torch.load_model`` walks ``model.state_dict()`` before
+        copying tensors over, which fails when the model contains
+        ``nn.LazyLinear`` (those parameters are still ``UninitializedParameter``
+        instances and cannot be inspected). We instead read the safetensors
+        file into a plain ``state_dict`` and call ``load_state_dict`` directly,
+        which materialises the lazy modules from the saved tensor shapes.
+        """
+        from safetensors.torch import load_file
+
+        state_dict = load_file(model_file, device=map_location or "cpu")
+        model.load_state_dict(state_dict, strict=strict)
+        return model
