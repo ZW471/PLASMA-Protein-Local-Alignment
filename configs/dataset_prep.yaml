@@ -15,7 +15,7 @@ val_ratio: 0.05
 exclusion_ratio: 0.1
 max_sequence_length: 1024  # Maximum sequence length filter (-1 for no limit)
 seq_identity_filtering: MP50
-seeds: [0, 42, 100]
+seeds: [1, 42, 100]
 
 # Dataset download links
 base_url: https://huggingface.co/datasets/AI4Protein
